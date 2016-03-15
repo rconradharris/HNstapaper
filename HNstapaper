@@ -30,17 +30,36 @@ def _fetch_hn_json(url):
     return json.loads(resp.content)
 
 
-def fetch_top_story_ids():
-    return _fetch_hn_json('topstories')
+def log(verbosity, msg, level=0):
+    if verbosity > level:
+        print(msg, file=sys.stderr)
 
 
-def fetch_story(story_id):
-    return _fetch_hn_json('item/' + str(story_id))
+def fetch_top_stories(story_cache, verbosity):
+    """Fetch top stories sorted from newest to oldest."""
+    # Clean cache by dropping old entries
+    # story_cache JSON dict stores keys as unicode even though they are ints
+    story_ids = set(map(unicode, _fetch_hn_json('topstories')))
+    cached_ids = set(story_cache.keys())
+    old_keys = cached_ids - story_ids
+    for key in old_keys:
+        log(verbosity, "Evicting '{}' from cache".format(key),
+            level=1)
+        del story_cache[key]
 
+    # Fetch and cache new top stories
+    stories = []
+    for story_id in story_ids:
+        if story_id not in story_cache:
+            log(verbosity, "Fetching story '{}'".format(story_id))
+            story = _fetch_hn_json('item/' + story_id)
+            story_cache[story_id] = story
 
-def fetch_top_stories():
-        for story_id in fetch_top_story_ids():
-            yield fetch_story(story_id)
+        story = story_cache[story_id]
+        stories.append((story['time'], story))
+
+    for story_time, story in sorted(stories, reverse=True):
+        yield story
 
 
 def fetch_word_count(url):
@@ -49,9 +68,10 @@ def fetch_word_count(url):
     return word_count
 
 
-def fetch_acceptable_stories(min_score, min_word_count):
+def fetch_acceptable_stories(story_cache, min_score, min_word_count,
+                             verbosity):
     """Fetch stories that meet min_score and min_word_count"""
-    for story in fetch_top_stories():
+    for story in fetch_top_stories(story_cache, verbosity):
         if story['score'] < min_score:
             continue
         url = story.get('url')
@@ -73,6 +93,8 @@ def add_to_instapaper(url, user, passwd):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--clear', action='store_true',
+                        help="Clear cached data")
     parser.add_argument('-d', '--dry-run', action='store_true')
     parser.add_argument('-l', '--limit', type=int, help="Limit number of articles sent")
     parser.add_argument('-p', '--password', help="Instapaper password")
@@ -88,27 +110,29 @@ def main():
     # Read data file
     data = {}
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE) as f:
-            data = json.load(f)
+        if args.clear:
+            os.unlink(DATA_FILE)
+        else:
+            with open(DATA_FILE) as f:
+                data = json.load(f)
 
+    story_cache = data.get('story_cache', {})
     sent_ids = set(data.get('sent_ids', []))
     num_sent = 0
     try:
-        for word_count, story in fetch_acceptable_stories(
-                args.score, args.words):
+        for word_count, story in fetch_acceptable_stories(story_cache,
+                args.score, args.words, args.verbosity):
             if args.limit is not None and num_sent >= args.limit:
-                if args.verbosity > 0:
-                    print("Limit {} reached, exiting...".format(args.limit),
-                          file=sys.stderr)
+                log(args.verbosity,
+                    "Limit {} reached, exiting...".format(args.limit))
                 break
             story_id = story['id']
             ascii_title = story['title'].encode('ascii', 'ignore')
             if story_id in sent_ids:
-                if args.verbosity > 0:
-                    print("Already added '{}'".format(ascii_title), file=sys.stderr)
+                log(args.verbosity, "Already added '{}'".format(ascii_title))
             else:
-                if args.verbosity > 0:
-                    print("Adding '{}'".format(ascii_title), file=sys.stderr)
+                log(args.verbosity, "Adding score={} wc={} title='{}'".format(
+                    story['score'], word_count, ascii_title))
 
                 if not args.dry_run:
                     try:
@@ -117,13 +141,17 @@ def main():
                         print(e, file=sys.stderr)
                         sys.exit(1)
 
-                sent_ids.add(story_id)
+                    sent_ids.add(story_id)
                 num_sent += 1
     finally:
+        data['story_cache'] = story_cache
+
+        # JSON cannot serialize sets() so convert to list
+        data['sent_ids'] = list(sent_ids)
+
         # Write out data file (even in case of exception)
         with open(DATA_FILE, 'w') as f:
-            # JSON cannot serialize sets() so convert to list
-            json.dump(dict(sent_ids=list(sent_ids)), f)
+            json.dump(data, f)
 
 
 if __name__ == '__main__':
