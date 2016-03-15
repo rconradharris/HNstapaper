@@ -18,15 +18,17 @@ Install It
 
 ::
 
+    git clone https://github.com/rconradharris/HNstapaper.git
     pip install -r requires.txt
 
 
 Run It
 ======
 
-::
+Fetch 5 articles newest articles that meet criteria of 300 points and 2000
+words::
 
-    ./HNstapaper -u <YOUR-INSTAPAPER-USERNAME> -p <YOUR-INSTAPAPER-PASSWORD> -v
+    ./HNstapaper -u <YOUR-INSTAPAPER-USERNAME> -p <YOUR-INSTAPAPER-PASSWORD> -v --limit=5 --score=300 --words=2000
 
 
 Automate It
@@ -35,7 +37,7 @@ Automate It
 You can cron this up to run everyday at 9:00 by adding the following lines to
 your `crontab`::
 
-    0 9 * * * /usr/local/bin/HNstapaper -u <YOUR-INSTAPAPER-USERNAME> -p <YOUR-INSTAPAPER-PASSWORD> -v
+    0 9 * * * <PATH-TO-REPO>/HNstapaper -u <YOUR-INSTAPAPER-USERNAME> -p <YOUR-INSTAPAPER-PASSWORD> -v
 
 Requires
 ========
