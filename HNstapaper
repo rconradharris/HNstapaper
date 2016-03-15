@@ -102,12 +102,13 @@ def main():
                           file=sys.stderr)
                 break
             story_id = story['id']
+            ascii_title = story['title'].encode('ascii', 'ignore')
             if story_id in sent_ids:
                 if args.verbosity > 0:
-                    print("Already added '{title}'".format(**story), file=sys.stderr)
+                    print("Already added '{}'".format(ascii_title), file=sys.stderr)
             else:
                 if args.verbosity > 0:
-                    print("Adding '{title}'".format(**story), file=sys.stderr)
+                    print("Adding '{}'".format(ascii_title), file=sys.stderr)
 
                 if not args.dry_run:
                     try:
