@@ -1,0 +1,120 @@
+#!/usr/bin/env python
+"""
+1. Fetch top stories
+2. Determine word count
+3. Filter stories by min score and min word count
+4. Send filtered stories to Instapaper
+
+Rules
+
+* Never add the same story to Instapaper twice
+"""
+from __future__ import print_function
+import argparse
+import json
+import os
+import sys
+
+import goose
+import requests
+
+
+DATA_FILE = 'HNstapaper-data.json'
+
+API_URL = 'https://hacker-news.firebaseio.com/v0/'
+
+def _fetch_hn_json(url):
+    resp = requests.get(API_URL + url + '.json')
+    if resp.status_code != 200:
+        raise Exception("HN returned non-200 result")
+    return json.loads(resp.content)
+
+
+def fetch_top_story_ids():
+    return _fetch_hn_json('topstories')
+
+
+def fetch_story(story_id):
+    return _fetch_hn_json('item/' + str(story_id))
+
+
+def fetch_top_stories():
+        for story_id in fetch_top_story_ids():
+            yield fetch_story(story_id)
+
+
+def fetch_word_count(url):
+    article = goose.Goose().extract(url=url)
+    word_count = len(article.cleaned_text.split(' '))
+    return word_count
+
+
+def fetch_acceptable_stories(min_score, min_word_count):
+    """Fetch stories that meet min_score and min_word_count"""
+    for story in fetch_top_stories():
+        if story['score'] < min_score:
+            continue
+        url = story.get('url')
+        if not url:
+            continue
+        word_count = fetch_word_count(url)
+        if word_count >= min_word_count:
+            yield word_count, story
+
+
+def add_to_instapaper(url, user, passwd):
+    resp = requests.post('https://www.instapaper.com/api/add',
+                         params=dict(url=url),
+                         auth=(user, passwd))
+    if resp.status_code != 200:
+        raise Exception("Error adding {} to Instapaper".format(url))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d', '--dry-run', action='store_true')
+    parser.add_argument('-l', '--limit', type=int, help="Limit number of articles sent")
+    parser.add_argument('-p', '--password', help="Instapaper password")
+    parser.add_argument('-s', '--score', type=int, help="Minimum score", default=200)
+    parser.add_argument('-u', '--user', help="Instapaper username",
+                        required=True)
+    parser.add_argument('-w', '--words', type=int, help="Minimum word count",
+                        default=500)
+    args =  parser.parse_args()
+
+    # Read data file
+    data = {}
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE) as f:
+            data = json.load(f)
+
+    sent_ids = set(data.get('sent_ids', []))
+    num_sent = 0
+    try:
+        for word_count, story in fetch_acceptable_stories(
+                args.score, args.words):
+            if args.limit is not None and num_sent >= args.limit:
+                print("Limit {} reached, exiting...".format(args.limit),
+                      file=sys.stderr)
+                break
+            story_id = story['id']
+            if story_id in sent_ids:
+                print("Already added {}".format(story_id), file=sys.stderr)
+            else:
+                print("Adding {id}".format(**story), file=sys.stderr)
+                #print word_count, story['score'], story['title']
+
+                if not args.dry_run:
+                    add_to_instapaper(story['url'], args.user, args.password)
+
+                sent_ids.add(story_id)
+                num_sent += 1
+    finally:
+        # Write out data file (even in case of exception)
+        with open(DATA_FILE, 'w') as f:
+            # JSON cannot serialize sets() so convert to list
+            json.dump(dict(sent_ids=list(sent_ids)), f)
+
+
+if __name__ == '__main__':
+    main()
