@@ -16,13 +16,17 @@ this data will be available locally.
 Install It
 ==========
 
-pip install -r requires.txt
+::
+
+    pip install -r requires.txt
 
 
 Run It
 ======
 
-./HNstapaper -u <YOUR-INSTAPAPER-USERNAME> -p <YOUR-INSTAPAPER-PASSWORD> -v
+::
+
+    ./HNstapaper -u <YOUR-INSTAPAPER-USERNAME> -p <YOUR-INSTAPAPER-PASSWORD> -v
 
 
 Automate It
